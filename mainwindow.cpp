@@ -261,8 +261,8 @@ void MainWindow::calculate_stuff()
     if((attack_type == "Full Attack" || attack_type == "Power Attack" || attack_type == "Vital Strike" || attack_type == "Improved Vital Strike"
         || attack_type == "Greater Vital Strike" || attack_type == "Rapid Shot" || attack_type == "Manyshot") && ui->attack_2_bonus->value() > 0)
     {
-        if((attack_type == "Full Attack" || attack_type == "Manyshot") && (ui->weapon_speed->isChecked() || ui->buff_haste->isChecked()))
-        { //perform an extra attack during "Full Attack" or "Manyshot" when you either have a weapon with speed or are haste'd
+        if((attack_type == "Full Attack" || attack_type == "Rapid Shot") && (ui->weapon_speed->isChecked() || ui->buff_haste->isChecked()))
+        { //perform an extra attack during "Full Attack" or "Rapid Shot" when you either have a weapon with speed or are haste'd
             attacks.append("/+" + QString::number(ui->attack_1_bonus->value() + hit_bonus));
             hit_chance.append("/" + QString::number(get_hitchance(ui->attack_1_bonus->value() + hit_bonus, enemy_ac)) + "%");
             crit_chance.append("/" + QString::number(get_critchance(ui->attack_1_bonus->value() + hit_bonus, crit_confirm_bonus, crit_min_bound, enemy_ac)) + "%");
@@ -270,7 +270,7 @@ void MainWindow::calculate_stuff()
             attacks_num++;
         }
         if(attack_type == "Rapid Shot")
-        { //perform an extra attack when using "Manyshot"
+        { //perform an extra attack when using "Rapid Shot"
             attacks.append("/+" + QString::number(ui->attack_1_bonus->value() + hit_bonus));
             hit_chance.append("/" + QString::number(get_hitchance(ui->attack_1_bonus->value() + hit_bonus, enemy_ac)) + "%");
             crit_chance.append("/" + QString::number(get_critchance(ui->attack_1_bonus->value() + hit_bonus, crit_confirm_bonus, crit_min_bound, enemy_ac)) + "%");
