@@ -117,6 +117,8 @@ float MainWindow::get_damage(bool crit = false)
         damage += 7; //2d6
     if(ui->weapon_wounding->checkState())
         damage += 1; //1 point bleed
+    if(ui->feat_sneakattack->isChecked())
+        damage += ui->feat_sneak_attack_bonus->value() * 3.5; //sneak bonus d6
     damage += ui->misc_bonus_damage_noncrit->value();
 
     return damage;
@@ -203,8 +205,12 @@ void MainWindow::calculate_stuff()
         weapon_damage.append(" + 2d6 (Anarchic/Axiomatic)");
     if(ui->weapon_vicious->checkState())
         weapon_damage.append(" + 2d6 (Vicious)");
+    if(ui->feat_sneakattack->isChecked())
+        weapon_damage.append(" + " + QString::number(ui->feat_sneak_attack_bonus->value()) + "d6 (Sneak Attack)");
     if(ui->weapon_wounding->checkState())
-        weapon_damage.append(" +1 bleed (Wounding)");
+        weapon_damage.append(" +1 bleed (Wounding, stacks)");
+    if(ui->feat_bleedingattack->isChecked())
+        weapon_damage.append(" + " + QString::number(ui->feat_sneak_attack_bonus->value()) + " bleed (Bleeding Attack)");
 
     weapon_damage.append(")");
 
@@ -234,6 +240,12 @@ void MainWindow::calculate_stuff()
     if(ui->feat_criticalfocus->checkState())
         crit_confirm_bonus += 4;
 
+    if(ui->buff_haste->isChecked())
+        hit_bonus += 1;
+
+    if(attack_type == "Rapid Shot")
+        hit_bonus -= 2;
+
     int guidance_bonus = 0;
     if(ui->buff_guidance->isChecked()) //only works on first attack
         guidance_bonus = 1;
@@ -247,10 +259,18 @@ void MainWindow::calculate_stuff()
     attacks_num++;
 
     if((attack_type == "Full Attack" || attack_type == "Power Attack" || attack_type == "Vital Strike" || attack_type == "Improved Vital Strike"
-        || attack_type == "Greater Vital Strike") && ui->attack_2_bonus->value() > 0)
+        || attack_type == "Greater Vital Strike" || attack_type == "Rapid Shot" || attack_type == "Manyshot") && ui->attack_2_bonus->value() > 0)
     {
-        if(attack_type == "Full Attack" && (ui->weapon_speed->isChecked() || ui->buff_haste->isChecked()))
-        {
+        if((attack_type == "Full Attack" || attack_type == "Manyshot") && (ui->weapon_speed->isChecked() || ui->buff_haste->isChecked()))
+        { //perform an extra attack during "Full Attack" or "Manyshot" when you either have a weapon with speed or are haste'd
+            attacks.append("/+" + QString::number(ui->attack_1_bonus->value() + hit_bonus));
+            hit_chance.append("/" + QString::number(get_hitchance(ui->attack_1_bonus->value() + hit_bonus, enemy_ac)) + "%");
+            crit_chance.append("/" + QString::number(get_critchance(ui->attack_1_bonus->value() + hit_bonus, crit_confirm_bonus, crit_min_bound, enemy_ac)) + "%");
+            crit_chance_all.append("/" + QString::number(get_critchance(ui->attack_1_bonus->value() + hit_bonus, crit_confirm_bonus, crit_min_bound, enemy_ac, true)) + "%");
+            attacks_num++;
+        }
+        if(attack_type == "Rapid Shot")
+        { //perform an extra attack when using "Manyshot"
             attacks.append("/+" + QString::number(ui->attack_1_bonus->value() + hit_bonus));
             hit_chance.append("/" + QString::number(get_hitchance(ui->attack_1_bonus->value() + hit_bonus, enemy_ac)) + "%");
             crit_chance.append("/" + QString::number(get_critchance(ui->attack_1_bonus->value() + hit_bonus, crit_confirm_bonus, crit_min_bound, enemy_ac)) + "%");
@@ -293,6 +313,10 @@ void MainWindow::calculate_stuff()
 
     float damage_noncrit = get_damage();
     float damage_crit = get_damage(true);
+    float manyshot_bonus = 0;
+    float damage_expected = 0;
+    float damage_total = 0;
+
     if(attack_type == "Vital Strike")
     {
         //roll the damage dice again for the vital strike
@@ -322,19 +346,42 @@ void MainWindow::calculate_stuff()
         damage_noncrit *= 2;
     }
 
-    results.append("Average damage (non-crit): " + QString::number(damage_noncrit, 'g', 4) +
-                  "\nAverage damage (crit): " + QString::number(damage_crit, 'g', 4) +
-                  "\n");
-    //Expected damage per turn = (average non-crit damage + bonus crit damage * chance to crit)* chance to hit
-    //                         = (non-crit + (crit - non-crit) * crit chance) * hit chance
-    float damage_expected = (damage_noncrit + (damage_crit - damage_noncrit) * get_critchance(ui->attack_1_bonus->value() + hit_bonus + guidance_bonus, crit_confirm_bonus, crit_min_bound, enemy_ac)/100.0) * get_hitchance(ui->attack_1_bonus->value() + hit_bonus + guidance_bonus, enemy_ac)/100.0;
-    float damage_total = damage_expected;
+
+    if(attack_type == "Manyshot")
+    {
+        if(ui->stat_dex_mod->value() < 3)
+            ui->warnings->setText("Warning: Manyshot requires a dex of at least 17");
+        manyshot_bonus = damage_noncrit;
+        if(ui->feat_sneakattack->isChecked())
+            manyshot_bonus -= 3.5 * ui->feat_sneak_attack_bonus->value(); //sneak is only counted once
+        results.append("Average damage (non-crit): " + QString::number(damage_noncrit + manyshot_bonus, 'g', 4) + " (first shot) / " + QString::number(damage_noncrit, 'g', 4) + " (other shots)" +
+                       "\nAverage damage (crit): " + QString::number(damage_crit + manyshot_bonus, 'g', 4) + " (first shot) / " + QString::number(damage_crit, 'g', 4) + " (other shots)" +
+                       "\n");
+        damage_expected = (damage_noncrit + manyshot_bonus + (damage_crit - damage_noncrit) * get_critchance(ui->attack_1_bonus->value() + hit_bonus + guidance_bonus, crit_confirm_bonus, crit_min_bound, enemy_ac)/100.0) * get_hitchance(ui->attack_1_bonus->value() + hit_bonus + guidance_bonus, enemy_ac)/100.0;
+    }
+    else
+    {
+        results.append("Average damage (non-crit): " + QString::number(damage_noncrit, 'g', 4) +
+                      "\nAverage damage (crit): " + QString::number(damage_crit, 'g', 4) +
+                      "\n");
+        //Expected damage per turn = (average non-crit damage + bonus crit damage * chance to crit)* chance to hit
+        //                         = (non-crit + (crit - non-crit) * crit chance) * hit chance
+        damage_expected = (damage_noncrit + (damage_crit - damage_noncrit) * get_critchance(ui->attack_1_bonus->value() + hit_bonus + guidance_bonus, crit_confirm_bonus, crit_min_bound, enemy_ac)/100.0) * get_hitchance(ui->attack_1_bonus->value() + hit_bonus + guidance_bonus, enemy_ac)/100.0;
+    }
+    damage_total = damage_expected;
     results.append("Expected damage: " + QString::number(damage_expected, 'g', 4));
 
+
     if(attack_type == "Full Attack" || attack_type == "Power Attack" || attack_type == "Vital Strike" || attack_type == "Improved Vital Strike"
-            || attack_type == "Greater Vital Strike")
+            || attack_type == "Greater Vital Strike" || attack_type == "Rapid Shot" || attack_type == "Manyshot")
     {
-        if(attack_type == "Full Attack" && (ui->weapon_speed->isChecked() || ui->buff_haste->isChecked()))
+        if((attack_type == "Full Attack" || attack_type == "Rapid Shot") && (ui->weapon_speed->isChecked() || ui->buff_haste->isChecked()))
+        {
+            damage_expected = (damage_noncrit + (damage_crit - damage_noncrit) * get_critchance(ui->attack_1_bonus->value() + hit_bonus, crit_confirm_bonus, crit_min_bound, enemy_ac)/100.0) * get_hitchance(ui->attack_1_bonus->value() + hit_bonus, enemy_ac)/100.0;
+            results.append("/" + QString::number(damage_expected, 'g', 4));
+            damage_total += damage_expected;
+        }
+        if(attack_type == "Rapid Shot")
         {
             damage_expected = (damage_noncrit + (damage_crit - damage_noncrit) * get_critchance(ui->attack_1_bonus->value() + hit_bonus, crit_confirm_bonus, crit_min_bound, enemy_ac)/100.0) * get_hitchance(ui->attack_1_bonus->value() + hit_bonus, enemy_ac)/100.0;
             results.append("/" + QString::number(damage_expected, 'g', 4));
@@ -519,7 +566,7 @@ void MainWindow::on_weapon_ranged_clicked(bool checked)
         ui->weapon_wounding->setChecked(false); ui->weapon_wounding->setEnabled(false);
 
         ui->attack_type->clear();
-        ui->attack_type->insertItems(0, QStringList() << "Basic Attack" << "Full Attack" << "Rapid Shot" << "Many Shot");
+        ui->attack_type->insertItems(0, QStringList() << "Basic Attack" << "Full Attack" << "Rapid Shot" << "Manyshot");
         ui->attack_type->setCurrentIndex(1);
     }
 }
